@@ -7,9 +7,9 @@
 | Technical | [technical.md](technical.md) |
 | Non-functional | [non-functional.md](non-functional.md) |
 
-- **Source commit:** `4054b55114e1fe16363d8c451cd14db54fc695b0`
+- **Source commit:** `6556545879f4611dbd7eeec85ff3a878c61c64ef`
 - **Languages:** Java
 - **Model:** openai-compatible:claude-sonnet-4-6
-- **Generated:** 2026-06-30T17:04:50.789336815+02:00
+- **Generated:** 2026-06-30T17:15:42.037590538+02:00
 
 _Maintained automatically by SpecSync._

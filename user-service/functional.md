@@ -1,50 +1,57 @@
 ---
 repo: user-service
 spec_type: functional
-commit: 4054b55114e1fe16363d8c451cd14db54fc695b0
+commit: 6556545879f4611dbd7eeec85ff3a878c61c64ef
 model: openai-compatible:claude-sonnet-4-6
 prompt_version: v1
-input_hash: 1154734297395299feeb8345ae4561410ebf39ed7eff5a65094d69feb6a3876d
-generated_at: 2026-06-30T17:04:50.789336815+02:00
+input_hash: df91828eb6b72b181ecfa3b174acca587720ed81320134be9494d4e16c8c8e22
+generated_at: 2026-06-30T17:15:42.037590538+02:00
 generator: specsync
 ---
 
 ## Business Purpose
 
-The `user-service` provides centralised user management, authentication, and role-based authorisation for the SpecSync platform. It issues and validates JWT tokens so that other services (or API consumers) can authenticate users without maintaining their own identity stores. The service exposes a self-service registration/login flow for end-users and a privileged administration API for managing user accounts.
+This service provides user management, authentication, and authorization capabilities for the SpecSync platform. It handles user self-registration and login via JWT-based stateless authentication, and exposes administrative operations (listing, searching, updating, and deleting users) restricted to privileged roles. It exists as a dedicated identity/access boundary so that other services can delegate authentication and user lifecycle management to a single source of truth.
 
 ## Domain Scope (DDD Bounded Context)
 
-- **Bounded context:** Identity & Access Management (IAM).
-- **Core aggregate:** `User` — owns `id`, `username`, `email`, `password` (BCrypt hash), `role` (`USER` | `ADMIN`), `createdAt`, `updatedAt`.
-- **Supporting value objects:** `Role` enum (`USER`, `ADMIN`); JWT token (issued but not persisted).
-- **Upstream context:** None detected — this service is a root identity provider.
-- **Downstream contexts:** Any service that accepts the JWT issued here is a downstream consumer; no explicit downstream integrations are visible in this snapshot (no events, no outbound HTTP clients).
+- **Bounded context:** Identity & Access Management (IAM)
+- **Core aggregate:** `User` — owns username, email, hashed password, role, status, and audit timestamps (`createdAt`, `updatedAt`, `lastLoginAt`)
+- **Enumerations owned:** `Role` (`USER`, `ADMIN`), `UserStatus` (`ACTIVE`, `INACTIVE`, `SUSPENDED`)
+- **Neighbouring contexts:** No explicit upstream/downstream event integration is present (no messaging topics detected). Other services are expected to validate JWTs issued by this service; this service is therefore an upstream identity provider to any downstream consumer of those tokens.
 
 ## Use Cases / User Stories
 
-- **As an anonymous visitor**, I want to register a new account (`POST /api/auth/register`) so that I can obtain a JWT token and access protected resources.
-- **As a registered user**, I want to log in with my credentials (`POST /api/auth/login`) so that I receive a fresh JWT token for subsequent requests.
-- **As an ADMIN**, I want to list all registered users (`GET /api/users`) so that I can audit the user base.
-- **As an ADMIN**, I want to retrieve a specific user by ID (`GET /api/users/{id}`) so that I can inspect their details.
-- **As an ADMIN**, I want to update a user's email address and/or role (`PUT /api/users/{id}`) so that I can correct data or promote/demote users.
-- **As an ADMIN**, I want to permanently delete a user account (`DELETE /api/users/{id}`) so that I can remove stale or unauthorised accounts.
+- **As an anonymous user**, I want to register with a username, email, and password (`POST /api/auth/register`) so that I can obtain a JWT and access protected resources.
+- **As a registered user**, I want to log in with my username and password (`POST /api/auth/login`) so that I receive a JWT token to authenticate subsequent requests.
+- **As an ADMIN**, I want to list all users (`GET /api/users`) so that I can review every account in the system.
+- **As an ADMIN**, I want to search and filter users by a query string, status, and/or role with pagination (`GET /api/users/search`) so that I can efficiently locate specific accounts.
+- **As an ADMIN**, I want to retrieve all users in a given status (`GET /api/users/status/{status}`) so that I can act on a specific cohort (e.g., all SUSPENDED accounts).
+- **As an ADMIN**, I want to view aggregate user statistics (`GET /api/users/stats`) so that I can monitor platform growth and account health.
+- **As an ADMIN**, I want to retrieve a specific user by ID (`GET /api/users/{id}`) so that I can inspect individual account details.
+- **As an ADMIN**, I want to update a user's email and/or role (`PUT /api/users/{id}`) so that I can correct account data or elevate/demote privileges.
+- **As an ADMIN**, I want to change a user's status (`PATCH /api/users/{id}/status`) so that I can activate, deactivate, or suspend accounts.
+- **As an ADMIN or the account owner**, I want to change a user's password (`PATCH /api/users/{id}/password`) after providing the current password so that account credentials can be updated securely.
+- **As an ADMIN**, I want to permanently delete a user (`DELETE /api/users/{id}`) so that stale or invalid accounts can be removed.
 
 ## Business Rules
 
-- **Username uniqueness:** `username` must be unique across all users; duplicate registration returns HTTP 409.
-- **Email uniqueness:** `email` must be unique across all users; duplicate registration or update returns HTTP 409.
-- **Username format:** Must be between 3 and 50 characters and not blank (`@NotBlank`, `@Size(min=3, max=50)`).
-- **Email format:** Must be a syntactically valid e-mail address (`@Email`); required on registration, optional but validated on update.
-- **Password length:** Must be at least 6 characters on registration (`@Size(min=6)`).
-- **Password storage:** Passwords are stored as BCrypt hashes; plaintext is never persisted.
-- **Default role:** Newly registered users receive the `USER` role unless explicitly set otherwise. (inferred — the `User` entity defaults `role` to `USER` and the registration flow does not accept a role field from the caller.)
-- **JWT expiry:** Tokens are valid for exactly 24 hours from issuance; expired tokens are rejected.
-- **JWT algorithm:** Tokens are signed with HMAC-SHA256 using a configurable secret of at least 32 characters.
-- **Stateless sessions:** No server-side session is maintained; every request must carry a valid `Authorization: Bearer <token>` header for protected endpoints.
-- **Admin-only user management:** All `/api/users/**` endpoints require the `ADMIN` role (enforced via `@PreAuthorize("hasRole('ADMIN')")`); a valid JWT without the ADMIN role returns HTTP 403.
-- **Public auth endpoints:** `/api/auth/**` is fully accessible without authentication.
-- **Immutable creation timestamp:** `createdAt` is set on first persist and never updated (`updatable = false`).
-- **Updatable fields:** Only `email` and `role` can be changed via the update endpoint; `username` and `password` are not exposed for update. (inferred — based on `UpdateUserRequest` containing only `email` and `role`.)
-- **Not-found handling:** Requests referencing a non-existent user ID return HTTP 404.
-- **Invalid credential handling:** A failed login attempt returns HTTP 401.
+- **Username uniqueness:** Usernames must be unique across all users; duplicate registration returns HTTP 409. (enforced by DB `UNIQUE` constraint and service layer)
+- **Email uniqueness:** Email addresses must be unique across all users; duplicate registration returns HTTP 409. (enforced by DB `UNIQUE` constraint and service layer)
+- **Username length:** Must be between 3 and 50 characters, non-blank.
+- **Email format:** Must be a well-formed email address (`@Email` validation on both registration and update requests).
+- **Registration password minimum length:** At least 6 characters.
+- **Password change minimum length:** New password must be at least 8 characters.
+- **Current password verification:** A password change requires the caller to supply the correct current password; failure returns HTTP 401.
+- **Default role on registration:** New users are assigned role `USER` unless explicitly overridden. (inferred — `Role.USER` is the `@Builder.Default`)
+- **Default status on creation:** New users are created with status `ACTIVE`. (inferred — `UserStatus.ACTIVE` is the `@Builder.Default`)
+- **Passwords are BCrypt-hashed:** Plaintext passwords are never stored; BCryptPasswordEncoder is configured as the sole `PasswordEncoder`.
+- **Stateless sessions:** No server-side session is maintained; every request must carry a valid JWT (`SessionCreationPolicy.STATELESS`).
+- **JWT signing algorithm:** HS256 with a secret key of at least 32 characters.
+- **Admin-only user management:** All `/api/users/**` endpoints (except `PATCH /{id}/password` for the account owner) require the `ADMIN` role; non-admin authenticated users receive HTTP 403.
+- **Password self-service:** A user may change their own password (`PATCH /api/users/{id}/password`) in addition to admins — enforced via `#id == authentication.principal.id` SpEL expression.
+- **Valid status values:** The `UserStatus` field accepts only `ACTIVE`, `INACTIVE`, or `SUSPENDED`; null status on an update request returns HTTP 400.
+- **Immutable creation timestamp:** `createdAt` is set on persist and is non-updatable.
+- **`lastLoginAt` updated on login:** (inferred — field exists on the entity and is surfaced in `UserDto`; service is expected to record it at login time.)
+- **Public endpoints:** `/api/auth/**`, Swagger UI, and H2 console paths are permit-all; all other requests require authentication.
+- **H2 console restricted to localhost:** `spring.h2.console.settings.web-allow-others=false` prevents remote access to the database console.
